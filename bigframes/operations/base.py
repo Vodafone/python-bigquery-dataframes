@@ -30,6 +30,7 @@ import bigframes.operations.aggregations as agg_ops
 import bigframes.series as series
 import bigframes.session
 
+#TODO: window = SQL windowing/ "over clause"
 
 class SeriesMethods:
     def __init__(
@@ -175,6 +176,7 @@ class SeriesMethods:
             block, result_id = self._block.project_expr(expr, name)
             return series.Series(block.select_column(result_id))
 
+    #TODO: sql group by related
     def _apply_binary_aggregation(
         self, other: series.Series, stat: agg_ops.BinaryAggregateOp
     ) -> float:
@@ -192,6 +194,7 @@ class SeriesMethods:
         )
         return (values[0], values[1], block)
 
+    #TODO: start here with schema tracking
     def _align_n(
         self,
         others: typing.Sequence[typing.Union[series.Series, scalars.Scalar]],

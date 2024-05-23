@@ -42,7 +42,6 @@ import google.cloud.bigquery as bigquery
 import numpy
 import pandas
 import tabulate
-
 import bigframes
 import bigframes._config.display_options as display_options
 import bigframes.constants as constants
@@ -85,7 +84,7 @@ ERROR_IO_REQUIRES_WILDCARD = (
 
 
 # Inherits from pandas DataFrame so that we can use the same docstrings.
-@log_adapter.class_logger
+#@log_adapter.class_logger
 class DataFrame(vendored_pandas_frame.DataFrame):
     __doc__ = vendored_pandas_frame.DataFrame.__doc__
 
@@ -651,6 +650,7 @@ class DataFrame(vendored_pandas_frame.DataFrame):
 
     __setitem__.__doc__ = inspect.getdoc(vendored_pandas_frame.DataFrame.__setitem__)
 
+    #TODO: _apply should be comparabe to _align_n, adds to expression tree
     def _apply_binop(
         self,
         other: float | int | bigframes.series.Series | DataFrame,
@@ -1856,8 +1856,9 @@ class DataFrame(vendored_pandas_frame.DataFrame):
             lambda x: x.replace(to_replace=to_replace, value=value, regex=regex)
         )
 
+    #TODO: WindowSpec defines over clause
     def ffill(self, *, limit: typing.Optional[int] = None) -> DataFrame:
-        window = bigframes.core.WindowSpec(preceding=limit, following=0)
+        window = bigframes.core.WindowSpec(preceding=limit, following=0) 
         return self._apply_window_op(agg_ops.LastNonNullOp(), window)
 
     def bfill(self, *, limit: typing.Optional[int] = None) -> DataFrame:

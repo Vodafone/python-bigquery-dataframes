@@ -95,6 +95,8 @@ class MaterializationOptions:
     ordered: bool = True
 
 
+# wraps operation expresison, knows index and value columns in the pandas sense (fallback for mergin if not derived from same data frame)
+#TODO: look ad apply {unary, binary, ...}_op, they build the expression tree
 class Block:
     """A immutable 2D data structure."""
 
