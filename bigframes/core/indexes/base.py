@@ -90,16 +90,26 @@ class Index(vendored_pandas_index.Index):
         # TODO: Support more index subtypes
         from bigframes.core.indexes.multi import MultiIndex
 
-        klass = MultiIndex if len(block._index_columns) > 1 else cls
+        if len(block._index_columns) <= 1:
+            klass = cls
+        else:
+            klass = MultiIndex
+
         result = typing.cast(Index, object.__new__(klass))
         result._query_job = None
         result._block = block
+        block.session._register_object(result)
         return result
 
     @classmethod
     def from_frame(
         cls, frame: Union[bigframes.series.Series, bigframes.dataframe.DataFrame]
     ) -> Index:
+        if len(frame._block.index_columns) == 0:
+            raise bigframes.exceptions.NullIndexError(
+                "Cannot access index properties with Null Index. Set an index using set_index."
+            )
+        frame._block._throw_if_null_index("from_frame")
         index = Index(frame._block)
         index._linked_frame = frame
         return index
@@ -154,7 +164,8 @@ class Index(vendored_pandas_index.Index):
     @property
     def dtypes(self) -> pandas.Series:
         return pandas.Series(
-            data=self._block.index.dtypes, index=self._block.index.names  # type:ignore
+            data=self._block.index.dtypes,
+            index=typing.cast(typing.Tuple, self._block.index.names),
         )
 
     @property
@@ -232,6 +243,11 @@ class Index(vendored_pandas_index.Index):
         return self._query_job
 
     def __repr__(self) -> str:
+        # Protect against errors with uninitialized Series. See:
+        # https://github.com/googleapis/python-bigquery-dataframes/issues/728
+        if not hasattr(self, "_block"):
+            return object.__repr__(self)
+
         # TODO(swast): Add a timeout here? If the query is taking a long time,
         # maybe we just print the job metadata that we have so far?
         # TODO(swast): Avoid downloading the whole series by using job
@@ -239,7 +255,7 @@ class Index(vendored_pandas_index.Index):
         opts = bigframes.options.display
         max_results = opts.max_rows
         if opts.repr_mode == "deferred":
-            return formatter.repr_query_job(self.query_job)
+            return formatter.repr_query_job(self._block._compute_dry_run())
 
         pandas_df, _, query_job = self._block.retrieve_repr_request_results(max_results)
         self._query_job = query_job
@@ -401,10 +417,10 @@ class Index(vendored_pandas_index.Index):
         block = block.drop_columns([condition_id])
         return Index(block)
 
-    def dropna(self, how: str = "any") -> Index:
+    def dropna(self, how: typing.Literal["all", "any"] = "any") -> Index:
         if how not in ("any", "all"):
             raise ValueError("'how' must be one of 'any', 'all'")
-        result = block_ops.dropna(self._block, self._block.index_columns, how=how)  # type: ignore
+        result = block_ops.dropna(self._block, self._block.index_columns, how=how)
         return Index(result)
 
     def drop_duplicates(self, *, keep: str = "first") -> Index:

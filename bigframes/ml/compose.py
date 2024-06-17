@@ -28,7 +28,7 @@ from google.cloud import bigquery
 
 from bigframes import constants
 from bigframes.core import log_adapter
-from bigframes.ml import base, core, globals, preprocessing, utils
+from bigframes.ml import base, core, globals, impute, preprocessing, utils
 import bigframes.pandas as bpd
 
 _BQML_TRANSFROM_TYPE_MAPPING = types.MappingProxyType(
@@ -38,7 +38,9 @@ _BQML_TRANSFROM_TYPE_MAPPING = types.MappingProxyType(
         "ML.MAX_ABS_SCALER": preprocessing.MaxAbsScaler,
         "ML.MIN_MAX_SCALER": preprocessing.MinMaxScaler,
         "ML.BUCKETIZE": preprocessing.KBinsDiscretizer,
+        "ML.QUANTILE_BUCKETIZE": preprocessing.KBinsDiscretizer,
         "ML.LABEL_ENCODER": preprocessing.LabelEncoder,
+        "ML.IMPUTER": impute.SimpleImputer,
     }
 )
 
@@ -57,7 +59,7 @@ class ColumnTransformer(
         transformers: List[
             Tuple[
                 str,
-                preprocessing.PreprocessingType,
+                Union[preprocessing.PreprocessingType, impute.SimpleImputer],
                 Union[str, List[str]],
             ]
         ],
@@ -72,12 +74,14 @@ class ColumnTransformer(
     @property
     def transformers_(
         self,
-    ) -> List[Tuple[str, preprocessing.PreprocessingType, str,]]:
+    ) -> List[
+        Tuple[str, Union[preprocessing.PreprocessingType, impute.SimpleImputer], str]
+    ]:
         """The collection of transformers as tuples of (name, transformer, column)."""
         result: List[
             Tuple[
                 str,
-                preprocessing.PreprocessingType,
+                Union[preprocessing.PreprocessingType, impute.SimpleImputer],
                 str,
             ]
         ] = []
@@ -106,7 +110,7 @@ class ColumnTransformer(
         transformers: List[
             Tuple[
                 str,
-                preprocessing.PreprocessingType,
+                Union[preprocessing.PreprocessingType, impute.SimpleImputer],
                 Union[str, List[str]],
             ]
         ] = []
@@ -151,7 +155,9 @@ class ColumnTransformer(
 
     def _merge(
         self, bq_model: bigquery.Model
-    ) -> Union[ColumnTransformer, preprocessing.PreprocessingType,]:
+    ) -> Union[
+        ColumnTransformer, Union[preprocessing.PreprocessingType, impute.SimpleImputer]
+    ]:
         """Try to merge the column transformer to a simple transformer. Depends on all the columns in bq_model are transformed with the same transformer."""
         transformers = self.transformers_
 

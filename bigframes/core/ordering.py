@@ -167,6 +167,8 @@ class ExpressionOrdering:
                 truncated_refs.append(order_part)
                 if columns_seen.issuperset(must_see):
                     return tuple(truncated_refs)
+        if len(must_see) == 0:
+            return ()
         raise ValueError("Ordering did not contain all total_order_cols")
 
     def with_reverse(self):
@@ -212,6 +214,14 @@ class ExpressionOrdering:
     @property
     def all_ordering_columns(self) -> Sequence[OrderingExpression]:
         return list(self.ordering_value_columns)
+
+    @property
+    def referenced_columns(self) -> Set[str]:
+        return set(
+            col
+            for part in self.ordering_value_columns
+            for col in part.scalar_expression.unbound_variables
+        )
 
 
 def encode_order_string(

@@ -21,11 +21,40 @@ import warnings
 
 import google.api_core.exceptions
 import google.auth.credentials
+import jellyfish
+
+import bigframes.constants
+import bigframes.exceptions
 
 SESSION_STARTED_MESSAGE = (
     "Cannot change '{attribute}' once a session has started. "
     "Call bigframes.pandas.close_session() first, if you are using the bigframes.pandas API."
 )
+
+
+UNKNOWN_LOCATION_MESSAGE = "The location '{location}' is set to an unknown value. Did you mean '{possibility}'?"
+
+
+def _validate_location(value: Optional[str]):
+
+    if value is None:
+        return
+
+    if value not in bigframes.constants.ALL_BIGQUERY_LOCATIONS:
+        location = str(value)
+        possibility = min(
+            bigframes.constants.ALL_BIGQUERY_LOCATIONS,
+            key=lambda item: jellyfish.levenshtein_distance(location, item),
+        )
+        warnings.warn(
+            UNKNOWN_LOCATION_MESSAGE.format(location=location, possibility=possibility),
+            # There are many layers before we get to (possibly) the user's code:
+            # -> bpd.options.bigquery.location = "us-central-1"
+            # -> location.setter
+            # -> _validate_location
+            stacklevel=3,
+            category=bigframes.exceptions.UnknownLocationWarning,
+        )
 
 
 class BigQueryOptions:
@@ -93,6 +122,7 @@ class BigQueryOptions:
     def location(self, value: Optional[str]):
         if self._session_started and self._location != value:
             raise ValueError(SESSION_STARTED_MESSAGE.format(attribute="location"))
+        _validate_location(value)
         self._location = value
 
     @property
