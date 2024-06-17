@@ -84,7 +84,7 @@ ERROR_IO_REQUIRES_WILDCARD = (
 
 
 # Inherits from pandas DataFrame so that we can use the same docstrings.
-#@log_adapter.class_logger
+@log_adapter.class_logger
 class DataFrame(vendored_pandas_frame.DataFrame):
     __doc__ = vendored_pandas_frame.DataFrame.__doc__
 
@@ -575,8 +575,9 @@ class DataFrame(vendored_pandas_frame.DataFrame):
         # Can this be removed?
         except (AttributeError, TypeError):
             object.__setattr__(self, key, value)
-
-    def __repr__(self) -> str:
+    
+    #TODO: problemati.. rename back to __repr__ 
+    def __my_repr__(self) -> str:
         """Converts a DataFrame to a string. Calls to_pandas.
 
         Only represents the first `bigframes.options.display.max_rows`.

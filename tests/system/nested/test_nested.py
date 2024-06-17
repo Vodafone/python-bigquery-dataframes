@@ -14,7 +14,7 @@
 
 from google.cloud import bigquery
 from bigframes.functions.nested import BQSchemaLayout, SchemaField
-from bigframes.functions.NestedContextManager import NestedDataFrame
+from bigframes.functions.NestedContextManager import NestedDataFrame, set_project
 from google.cloud.bigquery_storage_v1 import types as gtypes
 #import pytest
 from typing import List
@@ -37,14 +37,14 @@ def table_schema(table_name_full: str) -> List[SchemaField]:
 
 
 def test_unroll_schema():  #table_name_full: pytest.CaptureFixture[str]
-    schema = table_schema("vf-de-aib-prd-cmr-chn-lab.staging.scs_mini")
+    schema = table_schema("gmbigframes.nested.tiny") # "vf-de-aib-prd-cmr-chn-lab.staging.scs_mini")
     bqs = BQSchemaLayout(schema)
     bqs.determine_layout() # TODO: add prefix get_ or determine_
     return bqs
     #assert isinstance(schema, List[SchemaField])
 
 def test_nested_cm():
-    bfpd.options.bigquery.project = "vf-de-aib-prd-cmr-chn-lab"
+    bfpd.options.bigquery.project = "gmbigframes"
     bfpd.options.bigquery.location = "EU"
 
 
@@ -58,10 +58,14 @@ if __name__ == "__main__":
     #TODO: autodetect if bfpd si already setup and copy proj/loc if availabe
     # bfpd.options.bigquery.project = "vf-de-aib-prd-cmr-chn-lab"
     # bfpd.options.bigquery._location = "europe-west3"
-    table = "vf-de-ca-lab.andreas_beschorner.nested_mini"  #"vf-de-aib-prd-cmr-chn-lab.staging.scs_mini"
-    ncm =  NestedDataFrame(table, project="vf-de-ca-lab", location="europe-west3")
-    testdf = DataFrame()
-    testsq = Series()
+    set_project(project="gmbigframes", location="europe-west3")
+    table = "gmbigframes.nested.tiny"  #"vf-de-aib-prd-cmr-chn-lab.staging.scs_mini"
+    testdf = DataFrame({"a": [1]}, index=None)
+
+    ncm_t = NestedDataFrame(testdf)
+    ncm =  NestedDataFrame(table)
+    
+    #testsq = Series()
 
     with ncm:
         ncm |= bfpd.get_dummies(ncm.data)

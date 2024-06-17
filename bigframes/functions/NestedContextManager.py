@@ -98,6 +98,10 @@ class CommandBase(ABC):
     def execute(self):
         ...
 
+def set_project(project: str | None = None, location: str | None = None,):
+    bfpd.options.bigquery.project = project if project is not None else bfpd.options.bigquery.project
+    bfpd.options.bigquery.location = location if location is not None else bfpd.options.bigquery.loca
+    return
 
 class NestedDataFrame(CommandBase):
     _default_sep_layers: str = "__"  # TODO: make sure it is not found in column names!
@@ -105,13 +109,9 @@ class NestedDataFrame(CommandBase):
     _base_root_name = "_root_"
 
     # setup, start schema deduction
-    def __init__(self, data: DataFrame | Series | str,
-                 project: str | None = None, location: str | None = None,
-                 layer_separator: str | None = None):
+    def __init__(self, data: DataFrame | Series | str, layer_separator: str | None = None):
         # TODO: change into parameters
         # this needs to be done before getting the schema
-        bfpd.options.bigquery.project = project if project is not None else bfpd.options.bigquery.project
-        bfpd.options.bigquery.location = location if location is not None else bfpd.options.bigquery.location
         assert(bfpd.options.bigquery.project is not None and bfpd.options.bigquery.location is not None)
 
         # will be frequently used to get schemata
@@ -130,8 +130,10 @@ class NestedDataFrame(CommandBase):
         self._dag_from_schema()
 
     def _query_table_schema(self, data: DataFrame | Series | str) -> list | list[SchemaField]:
-        table_ref = data.to_gbq(destination_table=None, project_id=bfpd.options.bigquery.project, ordering_id="_bf_idx_id") \
+        table_ref = data.to_gbq(destination_table=None,  ordering_id="_bf_idx_id") \
             if not isinstance(data, str) else data
+            # project_id=bfpd.options.bigquery.project
+            
         query_job = self.client.get_table(table_ref)
         schema = query_job.schema
         self._is_nested = NestedDataFrame._has_nested_data(schema)
@@ -195,7 +197,7 @@ class NestedDataFrame(CommandBase):
             root_layer = False
         return
     
-    def _value_multiplicities(input_dict: dict[str, List[str]]) -> dict[tuple, str]:
+    def _value_multiplicities(self, input_dict: dict[str, List[str]]) -> dict[tuple, str]:
         """
         Finds multiplicities of values in a dict and returns an 'inverse' dict with keys as value list.
         Chaning the key from list to hashable tuple we can cover two cases in once:
