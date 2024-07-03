@@ -56,6 +56,7 @@ import bigframes.features
 import bigframes.operations as ops
 import bigframes.operations.aggregations as agg_ops
 import bigframes.session._io.pandas
+from bigframes.core.SchemaTracking import ContextSchemaTracking
 
 # Type constraint for wherever column labels are used
 Label = typing.Hashable
@@ -114,7 +115,9 @@ class Block:
         *,
         transpose_cache: Optional[Block] = None,
     ):
+        self._schema_lineage = ContextSchemaTracking()
         """Construct a block object, will create default index if no index columns specified."""
+        #TODO (andreas_b): schema is in expr!!
         index_columns = list(index_columns)
         if index_labels is not None:
             index_labels = list(index_labels)

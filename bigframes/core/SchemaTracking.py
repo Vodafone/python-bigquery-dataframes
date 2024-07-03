@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from networkx import DiGraph, topological_sort
+from networkx import DiGraph, topological_sort, bfs_layers, bfs_tree
 
 from bigframes.dataframe import DataFrame
 from bigframes.series import Series
@@ -36,6 +36,7 @@ from functools import partial as ft_partial, reduce as ft_reduce, wraps as ft_wr
 
 class NodeInfo(MemberSelector):
     T_root: str = "ROOT"
+    T_data: str = "DATA"
     T_record: str = "RECORD"
 
     def __init__(self, node_type: str, children: List[str]):
@@ -51,8 +52,7 @@ class SchemaHandler:
 
     def _tree_from_strings(self, paths: List[str]):
         # we need a root 'node' root, otherwise we would have to know all names in the first layer later
-        tree = defaultdict(dict)
-        root = {}
+        root = {} # defaultdict(dict)?
         for path in paths:
             parts = path.split(self.sep_structs)
             node = root
@@ -62,7 +62,6 @@ class SchemaHandler:
 
     def bfs(self, tree: List[str], root: str | None=None):
         # bfs on "."-joined strings
-        visited = set()
         # start queue with root key-value pair
         queue = deque([[root]]) if root is not None else deque([([], tree)])
 
@@ -91,52 +90,63 @@ class SchemaHandler:
 
 # Command interface
 class CommandBase(ABC):
-    def __init__(self, receiver: SchemaHandler):
+    def __init__(self, receiver: SchemaHandler|None=None):
         self.receiver = receiver
-        
+
     @abstractmethod
     def execute(self):
         ...
+
 
 def set_project(project: str | None = None, location: str | None = None,):
     bfpd.options.bigquery.project = project if project is not None else bfpd.options.bigquery.project
     bfpd.options.bigquery.location = location if location is not None else bfpd.options.bigquery.loca
     return
 
-class NestedDataFrame(CommandBase):
+class ContextSchemaTracking(CommandBase):
     _default_sep_layers: str = "__"  # TODO: make sure it is not found in column names!
     _sep_structs: str = "."  # not ot be modified by user
     _base_root_name = "_root_"
+    is_active = False
 
     # setup, start schema deduction
-    def __init__(self, data: DataFrame | Series | str, layer_separator: str | None = None):
+    def __init__(self, data: DataFrame | Series | str | None=None, layer_separator: str | None = None):
         # TODO: change into parameters
         # this needs to be done before getting the schema
         assert(bfpd.options.bigquery.project is not None and bfpd.options.bigquery.location is not None)
-
+        layer_separator = layer_separator if layer_separator is not None else ContextSchemaTracking._default_sep_layers
+        
+        super().__init__()
+        self.dag = DiGraph()
+        # ONE common root note as multiple columns can follow
+        self.dag.add_node(self._base_root_name, node_type=NodeInfo.T_root)
+        self._is_nested = True  # set before calling _deduct_schema as it is used there
+        
         # will be frequently used to get schemata
         self.client = bigquery.Client(project=bfpd.options.bigquery.project)
+        if data is not None:
+            self.set_source(data, layer_separator=layer_separator)
         
-        # get schema information
-        self._is_nested = True  # set before calling _deduct_schema as it is used there
-        _schema = self._deduct_schema(data, NestedDataFrame._sep_structs)
+    @staticproperty
+    def active():
+        return ContextSchemaTracking._is_active
 
+    def set_source(self, data: DataFrame | Series | str, layer_separator: str | None = None):
+        # get schema information
+        _schema = self._deduct_schema(data, ContextSchemaTracking._sep_structs)
         # set receiver and build DAG from receiver and its schema information
-        layer_separator = layer_separator if layer_separator is not None else NestedDataFrame._default_sep_layers
-        receiver = SchemaHandler(_schema, layer_separator=layer_separator, struct_separator=NestedDataFrame._sep_structs)
-        super().__init__(receiver)
-        self.dag = DiGraph()
-        self.dag.add_node(self._base_root_name, node_type=NodeInfo.T_root)  # ONE common root note as multiple columns can follow
+        receiver = SchemaHandler(_schema, layer_separator=layer_separator, struct_separator=ContextSchemaTracking._sep_structs)
+        self.receiver = receiver
         self._dag_from_schema()
 
     def _query_table_schema(self, data: DataFrame | Series | str) -> list | list[SchemaField]:
         table_ref = data.to_gbq(destination_table=None,  ordering_id="_bf_idx_id") \
             if not isinstance(data, str) else data
             # project_id=bfpd.options.bigquery.project
-            
+
         query_job = self.client.get_table(table_ref)
         schema = query_job.schema
-        self._is_nested = NestedDataFrame._has_nested_data(schema)
+        self._is_nested = ContextSchemaTracking._has_nested_data(schema)
         return schema
 
     def _deduct_schema(self, data: DataFrame | Series | str, struct_separator: str) -> BQSchemaLayout:
@@ -156,10 +166,13 @@ class NestedDataFrame(CommandBase):
     # Context Manager interface
     def __enter__(self):
         assert(self.receiver.schema_orig is not None)
+        SchemaHandler._is_active = True
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.df = None
+        self._dag_to_schema()
+        SchemaHandler._is_active = False
+        #TODO: compute final schema from DAG
         return
 
     # Context Manager functionality: Overload |=
@@ -179,28 +192,29 @@ class NestedDataFrame(CommandBase):
 
     def _dag_from_schema(self):
         schema = self.receiver.orig_schema()
-        
         root_layer = True
         for layer in self.receiver.bfs(schema):
             for col_name in layer:
                 assert(self.receiver.sep_layers not in col_name)
-                if not root_layer:
-                    col_type = self.receiver.schema_orig.map_to_type[col_name]  # RECORD?
-                    parent = col_name.rsplit(self.receiver.sep_structs, 1)[0]
-                else:
-                    parent = self._base_root_name
-                    col_type = NodeInfo.T_root
+                last_layer = col_name.rsplit(self.receiver.sep_structs, 1)[0] if not root_layer else self._base_root_name
+                col_type = self.receiver.schema_orig.map_to_type[col_name]
                 # replace struct separator with layer separator, as struct separator must not be used in exploded column names
                 col_name = col_name.replace(self.receiver.sep_structs, self.receiver.sep_layers)
                 self.dag.add_node(col_name, node_type=col_type)
-                self.dag.add_edge(parent, col_name)
+                self.dag.add_edge(last_layer, col_name)
             root_layer = False
         return
     
+    def _dag_to_schema(self):
+        layers = bfs_layers(self.dag, self._base_root_name)
+        bfs = bfs_tree(self.dag, self._base_root_name)
+        parent_layer = self._base_root_name
+        pass
+
     def _value_multiplicities(self, input_dict: dict[str, List[str]]) -> dict[tuple, str]:
         """
         Finds multiplicities of values in a dict and returns an 'inverse' dict with keys as value list.
-        Chaning the key from list to hashable tuple we can cover two cases in once:
+        Changing the key from list to hashable tuple we can cover two cases in once:
             a) single column explodes into multiple others, such as OneHotEncoding
             b) multiple columns merge into a single one, such as Merge for categories with small amount of samples
         :param dict[str, List[str]] input_dict: dict with keys as column names and values as list of column names
@@ -227,6 +241,7 @@ class NestedDataFrame(CommandBase):
 
     #def execute(self, *args, actions: Callable | List[Callable] | None = None, **kwargs):
     def execute(self, data: DataFrame | Series):
+        assert(self.receiver is not None)
         schema_changes = {}
          #TODO: get schema changes!
         successors = self._value_multiplicities(schema_changes)
@@ -235,3 +250,22 @@ class NestedDataFrame(CommandBase):
         #  changes.set(value)
         #schema = self._query_table_schema(data)
         return successors  #TODO: change
+
+
+# Factory and accessor class for SchemaTracking Context Manager
+class NestedDataHandler:
+    _instances: dict = dict(ContextSchemaTracking)
+
+    @classmethod
+    def create(cls, handler_id: str) -> None:
+        instance = cls._instances.get(handler_id, None)
+        if instance is None:
+            cls._instances[handler_id] = ContextSchemaTracking()
+        else:
+            raise AttributeError(f"Nested data context {handler_id} already exists!")
+    @classmethod
+    def __call__(cls, handler_id: str) -> ContextSchemaTracking:
+        instance = cls._instances.get(handler_id, None)
+        if instance is None:
+            raise AttributeError(f"No nested data context {handler_id} found")
+        

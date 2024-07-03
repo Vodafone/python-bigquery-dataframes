@@ -44,6 +44,7 @@ import bigframes.dtypes
 import bigframes.operations as ops
 import bigframes.operations.aggregations as agg_ops
 import bigframes.session._io.bigquery
+from bigframes.core.SchemaTracking import ContextSchemaTracking, NestedDataHandler
 
 if typing.TYPE_CHECKING:
     from bigframes.session import Session

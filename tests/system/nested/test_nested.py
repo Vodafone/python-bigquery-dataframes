@@ -14,12 +14,13 @@
 
 from google.cloud import bigquery
 from bigframes.functions.nested import BQSchemaLayout, SchemaField
-from bigframes.functions.NestedContextManager import NestedDataFrame, set_project
+from bigframes.core.SchemaTracking import ContextSchemaTracking, set_project
 from google.cloud.bigquery_storage_v1 import types as gtypes
 #import pytest
 from typing import List
 import bigframes.pandas as bfpd
 
+from bigframes import enums as bf_enums
 from bigframes.dataframe import DataFrame
 from bigframes.series import Series
 
@@ -48,7 +49,7 @@ def test_nested_cm():
     bfpd.options.bigquery.location = "EU"
 
 
-def fct_cm(cm: NestedDataFrame):
+def fct_cm(cm: ContextSchemaTracking):
     cm._current_data = bfpd.read_gbq(f"SELECT * FROM {table}"),
     testdf.apply(cm._current_data),
     bfpd.get_dummies(cm._current_data)   
@@ -60,10 +61,11 @@ if __name__ == "__main__":
     # bfpd.options.bigquery._location = "europe-west3"
     set_project(project="gmbigframes", location="europe-west3")
     table = "gmbigframes.nested.tiny"  #"vf-de-aib-prd-cmr-chn-lab.staging.scs_mini"
-    testdf = DataFrame({"a": [1]}, index=None)
+    #testdf = DataFrame({"a": [1]}, index=None)
 
-    ncm_t = NestedDataFrame(testdf)
-    ncm =  NestedDataFrame(table)
+    #df = bfpd.read_gbq_table(index_col=bf_enums.DefaultIndexKind.NULL, query=table)
+    #ncm_t = NestedDataFrame(testdf)
+    ncm =  ContextSchemaTracking(table)
     
     #testsq = Series()
 

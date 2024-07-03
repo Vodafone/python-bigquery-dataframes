@@ -175,6 +175,7 @@ def get_dummies(
     )
 
     # run queries to compute unique values
+    #TODO (andreas_b): Suggestion to NOT access data._block but instead introduce a getter function that offers schema access for lineage of the latter
     block = data._block
     max_unique_value = (
         bigframes.core.blocks._BQ_MAX_COLUMNS
